@@ -3,6 +3,7 @@ import { Vibrant } from 'node-vibrant/browser';
 import { I18nProvider, useI18n } from './i18nContext';
 import { ThemeProvider } from './themeContext';
 import { getContrastColor, formatDate, drawGrain } from './utils';
+import { getRandomTitle } from './data/titles';
 import Header from './components/Header';
 import CanvasView from './components/CanvasView';
 import ControlPanel from './components/ControlPanel';
@@ -12,39 +13,6 @@ import AboutModal from './components/AboutModal';
 const DEFAULT_W = 1000;
 const DEFAULT_H = 1400;
 const MAX_W = 2000;
-
-const RANDOM_TITLES = [
-  '人间烟火',
-  '山河远阔',
-  '落日余晖',
-  '星辰大海',
-  '风起之时',
-  '且听风吟',
-  '浮光掠影',
-  '夏日晚风',
-  '秋日私语',
-  '冬日暖阳',
-  '春暖花开',
-  '岁月静好',
-  '如约而至',
-  '不期而遇',
-  '山野万里',
-  '暮色温柔',
-  '晨光熹微',
-  '晚来天欲雪',
-  '陪你度过漫长岁月',
-  '世间美好与你环环相扣',
-  '一万年太久 只争朝夕',
-  '心中有山海 静而无边',
-  '所爱隔山海 山海皆可平',
-  '慢慢来 会好的 你又不差',
-  '来日方长 何惧路遥马慢',
-  '山水一程 三生有幸',
-  '落日归山海 山海藏深意',
-  '光落在你脸上 可爱一如往常',
-  '月亮不会奔你而来 星星也不会',
-  '在人间 拾荒 收集温柔与黄昏',
-];
 
 const FONT_MAP = {
   courier: '"Courier Prime", "Courier New", monospace',
@@ -304,8 +272,7 @@ function AppInner() {
   }, [palette]);
 
   const handleRandomTitle = useCallback(() => {
-    const idx = Math.floor(Math.random() * RANDOM_TITLES.length);
-    setTitle(RANDOM_TITLES[idx]);
+    setTitle(getRandomTitle());
   }, []);
 
   const handleImageOffsetChange = useCallback((x, y) => {

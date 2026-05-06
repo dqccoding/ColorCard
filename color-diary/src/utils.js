@@ -15,6 +15,8 @@ export function formatDate() {
 }
 
 export function drawGrain(ctx, width, height, intensity) {
+  if (intensity <= 0) return;
+
   const off = document.createElement('canvas');
   off.width = width;
   off.height = height;
@@ -25,15 +27,17 @@ export function drawGrain(ctx, width, height, intensity) {
 
   for (let i = 0; i < data.length; i += 4) {
     const noise = ((Math.random() * 2 - 1) * strength * 255) | 0;
-    data[i] = 128;
-    data[i + 1] = 128;
-    data[i + 2] = 128;
+    const gray = 128 + noise;
+    data[i] = gray;
+    data[i + 1] = gray;
+    data[i + 2] = gray;
     data[i + 3] = Math.abs(noise);
   }
 
   offCtx.putImageData(imageData, 0, 0);
   ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.15 + strength * 0.25;
+  ctx.globalCompositeOperation = 'screen';
   ctx.drawImage(off, 0, 0);
   ctx.restore();
 }
