@@ -155,4 +155,16 @@ input[type="text"]:focus {
 
 canvas {
   display: block;
+  touch-action: none;
+}
+
+/* Mobile safe area padding */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent iOS overscroll on sheet */
+.sheet-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }

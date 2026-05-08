@@ -9,6 +9,7 @@ import CanvasView from './components/CanvasView';
 import ControlPanel from './components/ControlPanel';
 import MobileControls from './components/MobileControls';
 import AboutModal from './components/AboutModal';
+import ExportPreviewModal from './components/ExportPreviewModal';
 
 const DEFAULT_W = 1000;
 const DEFAULT_H = 1400;
@@ -53,6 +54,9 @@ function AppInner() {
   const [flipped, setFlipped] = useState(false);
   const [showDate, setShowDate] = useState(true);
   const [fontFamily, setFontFamily] = useState('serif');
+  const [imageScale, setImageScale] = useState(1);
+  const [dateFormat, setDateFormat] = useState('YYYY.MM.DD');
+  const [showExportPreview, setShowExportPreview] = useState(false);
 
   const canvasRef = useRef(null);
   const previewRef = useRef(null);
@@ -80,16 +84,17 @@ function AppInner() {
       const imgW = img.naturalWidth || img.width;
       const imgH = img.naturalHeight || img.height;
 
-      const scale = Math.max(w / imgW, h / imgH);
-      const dw = imgW * scale;
-      const dh = imgH * scale;
+      const coverScale = Math.max(w / imgW, h / imgH);
+      const finalScale = coverScale * (imageScale || 1);
+      const dw = imgW * finalScale;
+      const dh = imgH * finalScale;
       const dx = ox + (w - dw) / 2 + (imageOffsetX || 0) * scaleFactor;
       const dy = oy + (h - dh) / 2 + (imageOffsetY || 0) * scaleFactor;
 
       ctx.drawImage(img, dx, dy, dw, dh);
       ctx.restore();
     },
-    [imageElement, imageOffsetX, imageOffsetY, scaleFactor]
+    [imageElement, imageOffsetX, imageOffsetY, imageScale, scaleFactor]
   );
 
   const drawTitleAndDate = useCallback(
@@ -163,6 +168,20 @@ function AppInner() {
       if (grainEnabled && grainIntensity > 0) {
         drawGrain(ctx, canvasW, canvasH, grainIntensity);
       }
+
+      ctx.save();
+      ctx.setLineDash([8, 8]);
+      ctx.strokeStyle = getContrastColor(bgColor);
+      ctx.globalAlpha = 0.12;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const splitY = flipped ? canvasH - bgHeight : bgHeight;
+      ctx.moveTo(0, splitY);
+      ctx.lineTo(canvasW, splitY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+      ctx.restore();
     },
     [canvasW, canvasH, split, flipped, gradientEnabled, bgColor, bgColor2, drawPhotoInRect, drawTitleAndDate, title, date, showDate, grainEnabled, grainIntensity]
   );
@@ -214,6 +233,7 @@ function AppInner() {
       if (!file) return;
       setImageOffsetX(0);
       setImageOffsetY(0);
+      setImageScale(1);
 
       const url = URL.createObjectURL(file);
       setImageUrl(url);
@@ -280,7 +300,36 @@ function AppInner() {
     setImageOffsetY(y);
   }, []);
 
-  const exportPng = useCallback(() => {
+  const handleImageScaleChange = useCallback((s) => {
+    setImageScale(s);
+  }, []);
+
+  const handleResetImagePosition = useCallback(() => {
+    setImageScale(1);
+    setImageOffsetX(0);
+    setImageOffsetY(0);
+  }, []);
+
+  const handleDateFormatChange = useCallback((fmt) => {
+    setDateFormat(fmt);
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const map = {
+      'YYYY.MM.DD': `${yyyy}.${mm}.${dd}`,
+      'MM/DD/YYYY': `${mm}/${dd}/${yyyy}`,
+      'DD/MM/YYYY': `${dd}/${mm}/${yyyy}`,
+      'YYYY-MM-DD': `${yyyy}-${mm}-${dd}`,
+    };
+    setDate(map[fmt] || `${yyyy}.${mm}.${dd}`);
+  }, []);
+
+  const showExportPreviewFn = useCallback(() => {
+    setShowExportPreview(true);
+  }, []);
+
+  const doDownload = useCallback(() => {
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = canvasW;
     tempCanvas.height = canvasH;
@@ -301,6 +350,11 @@ function AppInner() {
     }, 'image/png');
   }, [canvasW, canvasH, renderFrame]);
 
+  const handleConfirmExport = useCallback(() => {
+    doDownload();
+    setShowExportPreview(false);
+  }, [doDownload]);
+
   const commonProps = {
     imageUrl,
     palette,
@@ -317,6 +371,8 @@ function AppInner() {
     flipped,
     showDate,
     fontFamily,
+    imageScale,
+    dateFormat,
     hasImage: !!imageUrl,
     onFileSelect: handleFileSelect,
     onTitleChange: setTitle,
@@ -334,7 +390,10 @@ function AppInner() {
     onShowDateToggle: () => setShowDate((v) => !v),
     onRandom: handleRandom,
     onRandomTitle: handleRandomTitle,
-    onExportPng: exportPng,
+    onExportPng: showExportPreviewFn,
+    onImageScaleChange: handleImageScaleChange,
+    onResetImagePosition: handleResetImagePosition,
+    onDateFormatChange: handleDateFormatChange,
   };
 
   return (
@@ -345,7 +404,7 @@ function AppInner() {
         {!isMobile ? (
           <>
             <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#0a0a0a]">
-              <div className="w-full max-h-full flex items-center justify-center p-4">
+              <div className="w-full max-h-full flex items-center justify-center p-2">
                 <CanvasView
                   imageUrl={imageUrl}
                   canvasW={canvasW}
@@ -355,15 +414,18 @@ function AppInner() {
                   previewRef={previewRef}
                   imageOffsetX={imageOffsetX}
                   imageOffsetY={imageOffsetY}
+                  imageScale={imageScale}
                   onImageOffsetChange={handleImageOffsetChange}
+                  onImageScaleChange={handleImageScaleChange}
+                  onResetImagePosition={handleResetImagePosition}
                 />
               </div>
             </div>
             <ControlPanel {...commonProps} />
           </>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#0a0a0a] p-2">
+          <div className="flex-1 relative overflow-hidden">
+            <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a] p-2">
               <CanvasView
                 imageUrl={imageUrl}
                 canvasW={canvasW}
@@ -373,7 +435,10 @@ function AppInner() {
                 previewRef={previewRef}
                 imageOffsetX={imageOffsetX}
                 imageOffsetY={imageOffsetY}
+                imageScale={imageScale}
                 onImageOffsetChange={handleImageOffsetChange}
+                onImageScaleChange={handleImageScaleChange}
+                onResetImagePosition={handleResetImagePosition}
               />
             </div>
             <MobileControls {...commonProps} />
@@ -382,6 +447,15 @@ function AppInner() {
       </div>
 
       {aboutVisible && <AboutModal onClose={() => setAboutVisible(false)} />}
+      {showExportPreview && (
+        <ExportPreviewModal
+          onClose={() => setShowExportPreview(false)}
+          onDownload={handleConfirmExport}
+          canvasW={canvasW}
+          canvasH={canvasH}
+          renderFrame={renderFrame}
+        />
+      )}
     </div>
   );
 }

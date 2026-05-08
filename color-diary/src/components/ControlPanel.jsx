@@ -2,6 +2,13 @@ import { useI18n } from '../i18nContext';
 import PalettePicker from './PalettePicker';
 import ExportPanel from './ExportPanel';
 
+const DATE_FORMATS = [
+  { value: 'YYYY.MM.DD', label: 'YYYY.MM.DD' },
+  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
+  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
+  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
+];
+
 const FONT_OPTIONS = [
   { value: 'courier', labelKey: 'fontCourier' },
   { value: 'serif', labelKey: 'fontSerif' },
@@ -21,6 +28,7 @@ function ControlPanel(props) {
     flipped,
     showDate,
     fontFamily,
+    dateFormat,
     onTitleChange,
     onDateChange,
     onSplitChange,
@@ -31,10 +39,11 @@ function ControlPanel(props) {
     onFlipToggle,
     onShowDateToggle,
     onRandomTitle,
+    onDateFormatChange,
   } = props;
 
   return (
-    <div className="w-72 flex-shrink-0 flex flex-col h-full bg-[var(--bg-app)] border-l border-[var(--border)]">
+    <div className="w-[340px] flex-shrink-0 flex flex-col h-full bg-[var(--bg-app)] border-l border-[var(--border)]">
       <div className="flex-1 overflow-y-auto p-5 space-y-6">
         <div className="flex items-center justify-between">
           <span className="text-xs tracking-widest text-[var(--text-dim)]">{t('photo')}</span>
@@ -99,12 +108,29 @@ function ControlPanel(props) {
             </button>
           </div>
           {showDate && (
-            <input
-              type="text"
-              value={date}
-              placeholder={t('datePlaceholder')}
-              onChange={(e) => onDateChange(e.target.value)}
-            />
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={date}
+                placeholder={t('datePlaceholder')}
+                onChange={(e) => onDateChange(e.target.value)}
+              />
+              <div className="flex gap-1">
+                {DATE_FORMATS.map((fmt) => (
+                  <button
+                    key={fmt.value}
+                    onClick={() => props.onDateFormatChange?.(fmt.value)}
+                    className={`flex-1 py-1.5 text-[10px] tracking-wider rounded border transition-all cursor-pointer whitespace-nowrap ${
+                      props.dateFormat === fmt.value
+                        ? 'border-[var(--accent)] text-[var(--accent)]'
+                        : 'border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--accent)]'
+                    }`}
+                  >
+                    {fmt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
