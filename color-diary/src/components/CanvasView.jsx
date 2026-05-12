@@ -11,13 +11,16 @@ function CanvasView({
   canvasH,
   onFileSelect,
   canvasRef,
-  previewRef,
   imageOffsetX,
   imageOffsetY,
   imageScale,
   onImageOffsetChange,
   onImageScaleChange,
   onResetImagePosition,
+  availableHeight,
+  offsetBounds,
+  split,
+  flipped,
 }) {
   const fileInputRef = useRef(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -27,8 +30,65 @@ function CanvasView({
   const dragInfo = useRef({ active: false, startX: 0, startY: 0, offsetX: 0, offsetY: 0 });
   const lastTouchDistance = useRef(0);
   const lastPinchScale = useRef(1);
+  const snapAnimRef = useRef(null);
+  const offsetBoundsRef = useRef(null);
+  offsetBoundsRef.current = offsetBounds;
+  const offsetChangeRef = useRef(null);
+  offsetChangeRef.current = onImageOffsetChange;
+  const offsetRef = useRef({ x: 0, y: 0 });
+  offsetRef.current = { x: imageOffsetX, y: imageOffsetY };
 
   const { t } = useI18n();
+
+  const cancelSnap = useCallback(() => {
+    if (snapAnimRef.current) {
+      cancelAnimationFrame(snapAnimRef.current);
+      snapAnimRef.current = null;
+    }
+  }, []);
+
+  const snapToValid = useCallback(() => {
+    if (!imageUrl || !offsetBoundsRef.current) return;
+    const bounds = offsetBoundsRef.current;
+    const curX = offsetRef.current.x;
+    const curY = offsetRef.current.y;
+
+    const targetX = Math.min(bounds.maxX, Math.max(bounds.minX, curX));
+    const targetY = Math.min(bounds.maxY, Math.max(bounds.minY, curY));
+
+    if (targetX === curX && targetY === curY) return;
+
+    const duration = 280;
+    const startX = curX;
+    const startY = curY;
+    const startTime = performance.now();
+    const changeFn = offsetChangeRef.current;
+
+    const animate = (now) => {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / duration, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      changeFn?.(startX + (targetX - startX) * ease, startY + (targetY - startY) * ease);
+      if (t < 1) {
+        snapAnimRef.current = requestAnimationFrame(animate);
+      } else {
+        snapAnimRef.current = null;
+      }
+    };
+    snapAnimRef.current = requestAnimationFrame(animate);
+  }, [imageUrl]);
+
+  const GAP_TOLERANCE = 2;
+  const hasBounds = !!(offsetBounds && imageUrl);
+  const gapLeft = hasBounds && imageOffsetX > offsetBounds.maxX + GAP_TOLERANCE;
+  const gapRight = hasBounds && imageOffsetX < offsetBounds.minX - GAP_TOLERANCE;
+  const gapTop = hasBounds && imageOffsetY > offsetBounds.maxY + GAP_TOLERANCE;
+  const gapBottom = hasBounds && imageOffsetY < offsetBounds.minY - GAP_TOLERANCE;
+  const hasGap = gapLeft || gapRight || gapTop || gapBottom;
+
+  const photoStyle = flipped
+    ? { top: 0, bottom: `${split * 100}%` }
+    : { top: `${split * 100}%`, bottom: 0 };
 
   const triggerFileSelect = useCallback(() => {
     fileInputRef.current?.click();
@@ -70,6 +130,7 @@ function CanvasView({
   const handleMouseDown = useCallback(
     (e) => {
       if (!imageUrl) return;
+      cancelSnap();
       e.preventDefault();
       setIsDragging(true);
       dragInfo.current = {
@@ -96,7 +157,8 @@ function CanvasView({
   const handleMouseUp = useCallback(() => {
     dragInfo.current.active = false;
     setIsDragging(false);
-  }, []);
+    snapToValid();
+  }, [snapToValid]);
 
   const handleWheel = useCallback(
     (e) => {
@@ -123,6 +185,7 @@ function CanvasView({
   const handleTouchStart = useCallback(
     (e) => {
       if (!imageUrl) return;
+      cancelSnap();
 
       if (e.touches.length === 2) {
         e.preventDefault();
@@ -175,9 +238,10 @@ function CanvasView({
       if (e.touches.length === 0) {
         dragInfo.current.active = false;
         setIsDragging(false);
+        snapToValid();
       }
     },
-    []
+    [snapToValid]
   );
 
   const handleDoubleClick = useCallback(() => {
@@ -185,6 +249,10 @@ function CanvasView({
   }, [onResetImagePosition]);
 
   const TARGET_ASPECT_RATIO = 5 / 7;
+
+  const previewWidth = availableHeight != null
+    ? `min(100%, ${availableHeight * 5 / 7}px)`
+    : "min(100%, calc((100vh - 80px) * 5 / 7))";
 
   return (
     <div
@@ -200,11 +268,10 @@ function CanvasView({
       )}
 
       <div
-        ref={previewRef}
         className="relative bg-black shadow-2xl"
         style={{
           aspectRatio: TARGET_ASPECT_RATIO,
-          width: 'min(100%, calc((100vh - 80px) * 5 / 7))',
+          width: previewWidth,
           maxWidth: imageUrl ? '100%' : '100%',
         }}
       >
@@ -229,6 +296,14 @@ function CanvasView({
               onTouchEnd={handleTouchEnd}
               onDoubleClick={handleDoubleClick}
             />
+            {hasGap && (
+              <div className="absolute inset-0 pointer-events-none" style={photoStyle}>
+                {gapLeft && <div className="absolute left-0 top-0 bottom-0 w-[5px] bg-gradient-to-r from-red-400/60 to-transparent animate-gap-pulse" />}
+                {gapRight && <div className="absolute right-0 top-0 bottom-0 w-[5px] bg-gradient-to-l from-red-400/60 to-transparent animate-gap-pulse" />}
+                {gapTop && <div className="absolute top-0 left-0 right-0 h-[5px] bg-gradient-to-b from-red-400/60 to-transparent animate-gap-pulse" />}
+                {gapBottom && <div className="absolute bottom-0 left-0 right-0 h-[5px] bg-gradient-to-t from-red-400/60 to-transparent animate-gap-pulse" />}
+              </div>
+            )}
           </div>
         ) : (
           <div
@@ -256,7 +331,7 @@ function CanvasView({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*,video/*"
+        accept="image/*"
         className="hidden"
         onChange={handleFileChange}
       />

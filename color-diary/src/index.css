@@ -168,3 +168,20 @@ canvas {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
 }
+
+/* Hide scrollbar but keep scrollability */
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes gap-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.85; }
+}
+.animate-gap-pulse {
+  animation: gap-pulse 1.2s ease-in-out infinite;
+}

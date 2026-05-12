@@ -1,7 +1,8 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Vibrant } from 'node-vibrant/browser';
 import { I18nProvider, useI18n } from './i18nContext';
 import { ThemeProvider } from './themeContext';
+import { CanvasStateProvider, useCanvasState } from './canvasStateContext';
 import { getContrastColor, formatDate, drawGrain } from './utils';
 import { getRandomTitle } from './data/titles';
 import Header from './components/Header';
@@ -19,6 +20,10 @@ const FONT_MAP = {
   courier: '"Courier Prime", "Courier New", monospace',
   serif: '"Noto Serif SC", "Georgia", serif',
   sans: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
+  xiaowei: '"ZCOOL XiaoWei", "Noto Serif SC", serif',
+  mashanzheng: '"Ma Shan Zheng", cursive',
+  longcang: '"Long Cang", cursive',
+  zhimangxing: '"Zhi Mang Xing", cursive',
 };
 
 function computeCanvasWH(imgW, imgH) {
@@ -57,9 +62,11 @@ function AppInner() {
   const [imageScale, setImageScale] = useState(1);
   const [dateFormat, setDateFormat] = useState('YYYY.MM.DD');
   const [showExportPreview, setShowExportPreview] = useState(false);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+  const mobilePreviewRef = useRef(null);
+  const [mobilePreviewH, setMobilePreviewH] = useState(null);
 
   const canvasRef = useRef(null);
-  const previewRef = useRef(null);
   const { t } = useI18n();
 
   useEffect(() => {
@@ -69,8 +76,34 @@ function AppInner() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  useEffect(() => {
+    if (!isMobile) return;
+    const el = mobilePreviewRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setMobilePreviewH(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isMobile, mobileSheetOpen]);
+
   const scaleFactor = canvasW / DEFAULT_W;
   const effectiveFontSize = Math.round(fontSize * scaleFactor);
+
+  const offsetBounds = useMemo(() => {
+    if (!imageElement) return null;
+    const imgW = imageElement.naturalWidth || imageElement.width;
+    const imgH = imageElement.naturalHeight || imageElement.height;
+    const photoH = canvasH - split * canvasH;
+    const photoW = canvasW;
+    const coverScale = Math.max(photoW / imgW, photoH / imgH);
+    const finalScale = coverScale * (imageScale || 1);
+    const dw = imgW * finalScale;
+    const dh = imgH * finalScale;
+    const maxOffX = ((dw - photoW) / 2) / scaleFactor;
+    const maxOffY = ((dh - photoH) / 2) / scaleFactor;
+    return { minX: -maxOffX, maxX: maxOffX, minY: -maxOffY, maxY: maxOffY };
+  }, [imageElement, canvasW, canvasH, split, imageScale, scaleFactor]);
 
   const drawPhotoInRect = useCallback(
     (ctx, ox, oy, w, h) => {
@@ -238,7 +271,8 @@ function AppInner() {
       const url = URL.createObjectURL(file);
       setImageUrl(url);
 
-      const processImage = (img) => {
+      const img = new Image();
+      img.onload = () => {
         const nw = img.naturalWidth || img.width;
         const nh = img.naturalHeight || img.height;
         const { w, h } = computeCanvasWH(nw, nh);
@@ -247,39 +281,7 @@ function AppInner() {
         setImageElement(img);
         extractColors(img);
       };
-
-      if (file.type.startsWith('video/')) {
-        const video = document.createElement('video');
-        video.src = url;
-        video.muted = true;
-        video.playsInline = true;
-
-        await new Promise((resolve) => {
-          video.addEventListener('loadeddata', resolve, { once: true });
-          video.load();
-        });
-
-        video.currentTime = 0;
-        await new Promise((resolve) => {
-          video.addEventListener('seeked', resolve, { once: true });
-        });
-
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = video.videoWidth || 640;
-        tempCanvas.height = video.videoHeight || 480;
-        const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-        const img = new Image();
-        img.onload = () => processImage(img);
-        img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
-        URL.revokeObjectURL(url);
-        setImageUrl(img.src);
-      } else {
-        const img = new Image();
-        img.onload = () => processImage(img);
-        img.src = url;
-      }
+      img.src = url;
     },
     [extractColors]
   );
@@ -355,7 +357,35 @@ function AppInner() {
     setShowExportPreview(false);
   }, [doDownload]);
 
-  const commonProps = {
+  const handleApplyPreset = useCallback((config) => {
+    if (config.split !== undefined) setSplit(config.split);
+    if (config.fontSize !== undefined) setFontSize(config.fontSize);
+    if (config.grainEnabled !== undefined) setGrainEnabled(config.grainEnabled);
+    if (config.grainIntensity !== undefined) setGrainIntensity(config.grainIntensity);
+    if (config.flipped !== undefined) setFlipped(config.flipped);
+    if (config.showDate !== undefined) setShowDate(config.showDate);
+    if (config.fontFamily !== undefined) setFontFamily(config.fontFamily);
+    if (config.dateFormat !== undefined) {
+      setDateFormat(config.dateFormat);
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const map = {
+        'YYYY.MM.DD': `${yyyy}.${mm}.${dd}`,
+        'MM/DD/YYYY': `${mm}/${dd}/${yyyy}`,
+        'DD/MM/YYYY': `${dd}/${mm}/${yyyy}`,
+        'YYYY-MM-DD': `${yyyy}-${mm}-${dd}`,
+      };
+      setDate(map[config.dateFormat] || `${yyyy}.${mm}.${dd}`);
+    }
+    if (config.gradientEnabled !== undefined) setGradientEnabled(config.gradientEnabled);
+    if (config.textColor !== undefined) setTextColor(config.textColor);
+    if (config.bgColor !== undefined) setBgColor(config.bgColor);
+    if (config.bgColor2 !== undefined) setBgColor2(config.bgColor2);
+  }, []);
+
+  const canvasState = {
     imageUrl,
     palette,
     bgColor,
@@ -394,69 +424,84 @@ function AppInner() {
     onImageScaleChange: handleImageScaleChange,
     onResetImagePosition: handleResetImagePosition,
     onDateFormatChange: handleDateFormatChange,
+    onApplyPreset: handleApplyPreset,
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[var(--bg-app)]">
-      <Header onAboutClick={() => setAboutVisible(true)} />
+    <CanvasStateProvider value={canvasState}>
+      <div className="h-screen w-screen flex flex-col overflow-hidden bg-[var(--bg-app)]">
+        <Header onAboutClick={() => setAboutVisible(true)} />
 
-      <div className="flex-1 flex pt-[52px] overflow-hidden">
-        {!isMobile ? (
-          <>
-            <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#0a0a0a]">
-              <div className="w-full max-h-full flex items-center justify-center p-2">
+        <div className="flex-1 flex pt-[52px] overflow-hidden">
+          {!isMobile ? (
+            <>
+              <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#0a0a0a]">
+                <div className="w-full max-h-full flex items-center justify-center p-2">
+                  <CanvasView
+                    imageUrl={imageUrl}
+                    canvasW={canvasW}
+                    canvasH={canvasH}
+                    onFileSelect={handleFileSelect}
+                    canvasRef={canvasRef}
+                    imageOffsetX={imageOffsetX}
+                    imageOffsetY={imageOffsetY}
+                    imageScale={imageScale}
+                    onImageOffsetChange={handleImageOffsetChange}
+                    onImageScaleChange={handleImageScaleChange}
+                    onResetImagePosition={handleResetImagePosition}
+                    offsetBounds={offsetBounds}
+                    split={split}
+                    flipped={flipped}
+                  />
+                </div>
+              </div>
+              <ControlPanel />
+            </>
+          ) : (
+            <div className="flex-1 relative overflow-hidden">
+              <div
+                ref={mobilePreviewRef}
+                className="absolute left-0 right-0 flex items-center justify-center bg-[#0a0a0a] p-2 transition-[top,bottom] duration-200 ease-out"
+                style={{
+                  top: 0,
+                  bottom: mobileSheetOpen ? 'calc(40vh + 52px)' : 0,
+                }}
+              >
                 <CanvasView
                   imageUrl={imageUrl}
                   canvasW={canvasW}
                   canvasH={canvasH}
                   onFileSelect={handleFileSelect}
                   canvasRef={canvasRef}
-                  previewRef={previewRef}
                   imageOffsetX={imageOffsetX}
                   imageOffsetY={imageOffsetY}
                   imageScale={imageScale}
                   onImageOffsetChange={handleImageOffsetChange}
                   onImageScaleChange={handleImageScaleChange}
                   onResetImagePosition={handleResetImagePosition}
+                  availableHeight={mobilePreviewH}
+                  offsetBounds={offsetBounds}
+                  split={split}
+                  flipped={flipped}
                 />
               </div>
+              <MobileControls onSheetChange={setMobileSheetOpen} />
             </div>
-            <ControlPanel {...commonProps} />
-          </>
-        ) : (
-          <div className="flex-1 relative overflow-hidden">
-            <div className="absolute inset-0 flex items-center justify-center bg-[#0a0a0a] p-2">
-              <CanvasView
-                imageUrl={imageUrl}
-                canvasW={canvasW}
-                canvasH={canvasH}
-                onFileSelect={handleFileSelect}
-                canvasRef={canvasRef}
-                previewRef={previewRef}
-                imageOffsetX={imageOffsetX}
-                imageOffsetY={imageOffsetY}
-                imageScale={imageScale}
-                onImageOffsetChange={handleImageOffsetChange}
-                onImageScaleChange={handleImageScaleChange}
-                onResetImagePosition={handleResetImagePosition}
-              />
-            </div>
-            <MobileControls {...commonProps} />
-          </div>
+          )}
+        </div>
+
+        {aboutVisible && <AboutModal onClose={() => setAboutVisible(false)} />}
+        {showExportPreview && (
+          <ExportPreviewModal
+            onClose={() => setShowExportPreview(false)}
+            onDownload={handleConfirmExport}
+            canvasW={canvasW}
+            canvasH={canvasH}
+            renderFrame={renderFrame}
+          />
         )}
       </div>
-
-      {aboutVisible && <AboutModal onClose={() => setAboutVisible(false)} />}
-      {showExportPreview && (
-        <ExportPreviewModal
-          onClose={() => setShowExportPreview(false)}
-          onDownload={handleConfirmExport}
-          canvasW={canvasW}
-          canvasH={canvasH}
-          renderFrame={renderFrame}
-        />
-      )}
-    </div>
+    </CanvasStateProvider>
   );
 }
 

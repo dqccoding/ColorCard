@@ -1,7 +1,9 @@
 import { useI18n } from '../i18nContext';
+import { useCanvasState } from '../canvasStateContext';
 
-function ExportPanel({ onExportPng, hasImage, isMobile }) {
+function ExportPanel({ isMobile }) {
   const { t } = useI18n();
+  const { onExportPng, hasImage } = useCanvasState();
 
   return (
     <div className={`flex gap-3 ${isMobile ? 'flex-row justify-center px-4' : 'flex-col'}`}>

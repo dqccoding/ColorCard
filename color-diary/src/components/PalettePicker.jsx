@@ -1,8 +1,23 @@
 import { useI18n } from '../i18nContext';
+import Toggle from './Toggle';
 import { getContrastColor } from '../utils';
+import { useCanvasState } from '../canvasStateContext';
 
-function PalettePicker({ palette, bgColor, bgColor2, textColor, gradientEnabled, onBgColor, onBgColor2, onTextColor, onGradientToggle, onRandom }) {
+function PalettePicker() {
   const { t } = useI18n();
+  const {
+    palette,
+    bgColor,
+    bgColor2,
+    textColor,
+    gradientEnabled,
+    onBgColor,
+    onBgColor2,
+    onTextColor,
+    onGradientToggle,
+    onRandom,
+  } = useCanvasState();
+
   const colors = palette && palette.length >= 5 ? palette : null;
   const autoTextColor = bgColor ? getContrastColor(bgColor) : '#ffffff';
   const isAuto = textColor === 'auto';
@@ -48,18 +63,7 @@ function PalettePicker({ palette, bgColor, bgColor2, textColor, gradientEnabled,
 
       <div className="flex items-center justify-between">
         <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('gradient')}</span>
-        <button
-          onClick={onGradientToggle}
-          className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${
-            gradientEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-          }`}
-        >
-          <div
-            className={`w-4 h-4 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform ${
-              gradientEnabled ? 'translate-x-5' : 'translate-x-0.5'
-            }`}
-          />
-        </button>
+        <Toggle checked={gradientEnabled} onChange={onGradientToggle} />
       </div>
 
       {gradientEnabled && (

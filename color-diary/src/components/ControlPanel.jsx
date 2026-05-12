@@ -1,24 +1,14 @@
 import { useI18n } from '../i18nContext';
+import Toggle from './Toggle';
 import PalettePicker from './PalettePicker';
+import PresetPanel from './PresetPanel';
 import ExportPanel from './ExportPanel';
+import { DATE_FORMATS, FONT_OPTIONS } from '../data/constants';
+import { useCanvasState } from '../canvasStateContext';
 
-const DATE_FORMATS = [
-  { value: 'YYYY.MM.DD', label: 'YYYY.MM.DD' },
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
-];
-
-const FONT_OPTIONS = [
-  { value: 'courier', labelKey: 'fontCourier' },
-  { value: 'serif', labelKey: 'fontSerif' },
-  { value: 'sans', labelKey: 'fontSans' },
-];
-
-function ControlPanel(props) {
+function ControlPanel() {
   const { t } = useI18n();
   const {
-    imageUrl,
     title,
     date,
     split,
@@ -29,6 +19,7 @@ function ControlPanel(props) {
     showDate,
     fontFamily,
     dateFormat,
+    onFileSelect,
     onTitleChange,
     onDateChange,
     onSplitChange,
@@ -40,7 +31,7 @@ function ControlPanel(props) {
     onShowDateToggle,
     onRandomTitle,
     onDateFormatChange,
-  } = props;
+  } = useCanvasState();
 
   return (
     <div className="w-[340px] flex-shrink-0 flex flex-col h-full bg-[var(--bg-app)] border-l border-[var(--border)]">
@@ -49,9 +40,9 @@ function ControlPanel(props) {
           <span className="text-xs tracking-widest text-[var(--text-dim)]">{t('photo')}</span>
           <label className="text-xs tracking-wider text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors cursor-pointer">
             + {t('upload')}
-            <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => {
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) props.onFileSelect?.(file);
+              if (file) onFileSelect?.(file);
               e.target.value = '';
             }} />
           </label>
@@ -59,18 +50,21 @@ function ControlPanel(props) {
 
         <div className="flex items-center justify-between">
           <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('flip')}</span>
-          <button
-            onClick={onFlipToggle}
-            className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${
-              flipped ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-            }`}
-          >
-            <div
-              className={`w-4 h-4 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform ${
-                flipped ? 'translate-x-5' : 'translate-x-0.5'
-              }`}
-            />
-          </button>
+          <Toggle checked={flipped} onChange={onFlipToggle} />
+        </div>
+
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('split')}</span>
+            <span className="text-xs text-[var(--text-muted)]">{Math.round(split * 100)}%</span>
+          </div>
+          <input
+            type="range"
+            min="20"
+            max="75"
+            value={Math.round(split * 100)}
+            onChange={(e) => onSplitChange(Number(e.target.value) / 100)}
+          />
         </div>
 
         <div>
@@ -94,18 +88,7 @@ function ControlPanel(props) {
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('date')}</span>
-            <button
-              onClick={onShowDateToggle}
-              className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${
-                showDate ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-              }`}
-            >
-              <div
-                className={`w-4 h-4 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform ${
-                  showDate ? 'translate-x-5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
+            <Toggle checked={showDate} onChange={onShowDateToggle} />
           </div>
           {showDate && (
             <div className="space-y-2">
@@ -119,9 +102,9 @@ function ControlPanel(props) {
                 {DATE_FORMATS.map((fmt) => (
                   <button
                     key={fmt.value}
-                    onClick={() => props.onDateFormatChange?.(fmt.value)}
+                    onClick={() => onDateFormatChange?.(fmt.value)}
                     className={`flex-1 py-1.5 text-[10px] tracking-wider rounded border transition-all cursor-pointer whitespace-nowrap ${
-                      props.dateFormat === fmt.value
+                      dateFormat === fmt.value
                         ? 'border-[var(--accent)] text-[var(--accent)]'
                         : 'border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--accent)]'
                     }`}
@@ -157,20 +140,6 @@ function ControlPanel(props) {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('split')}</span>
-            <span className="text-xs text-[var(--text-muted)]">{Math.round(split * 100)}%</span>
-          </div>
-          <input
-            type="range"
-            min="20"
-            max="75"
-            value={Math.round(split * 100)}
-            onChange={(e) => onSplitChange(Number(e.target.value) / 100)}
-          />
-        </div>
-
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('fontSize')}</span>
             <span className="text-xs text-[var(--text-muted)]">{fontSize}px</span>
           </div>
@@ -183,23 +152,14 @@ function ControlPanel(props) {
           />
         </div>
 
-        <PalettePicker {...props} />
+        <PresetPanel />
+
+        <PalettePicker />
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('grain')}</span>
-            <button
-              onClick={onGrainToggle}
-              className={`w-10 h-5 rounded-full transition-colors cursor-pointer relative ${
-                grainEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-              }`}
-            >
-              <div
-                className={`w-4 h-4 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform ${
-                  grainEnabled ? 'translate-x-5' : 'translate-x-0.5'
-                }`}
-              />
-            </button>
+            <Toggle checked={grainEnabled} onChange={onGrainToggle} />
           </div>
           {grainEnabled && (
             <div className="mt-2">
@@ -220,7 +180,7 @@ function ControlPanel(props) {
       </div>
 
       <div className="p-5 border-t border-[var(--border)]">
-        <ExportPanel {...props} />
+        <ExportPanel />
       </div>
     </div>
   );

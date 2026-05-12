@@ -42,14 +42,6 @@ export function drawGrain(ctx, width, height, intensity) {
   ctx.restore();
 }
 
-export function getVideoFrame(video, canvas) {
-  return new Promise((resolve) => {
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    resolve(canvas);
-  });
-}
-
 export function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';

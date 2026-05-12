@@ -26,6 +26,10 @@ const T = {
     fontCourier: 'Courier',
     fontSerif: 'Serif',
     fontSans: 'Sans',
+    fontXiaowei: 'XiaoWei',
+    fontMashanzheng: 'MaShan',
+    fontLongcang: 'LongCang',
+    fontZhimangxing: 'Zhimang',
     dropFile: 'DROP FILE',
     clickToUpload: 'CLICK TO UPLOAD',
     dragAndDrop: 'or drag & drop',
@@ -34,6 +38,13 @@ const T = {
     aboutTitle: 'About Color Diary',
     aboutText: 'Color Diary is a cover image generator that creates beautiful split-cover style images. Upload your photo and let the tool extract its dominant colors to create a unique cover layout with customizable text, grain texture, and more.',
     longPressSave: 'Long press to save',
+    preset: 'Preset',
+    savePreset: 'Save',
+    presetNamePlaceholder: 'Preset name...',
+    confirm: 'OK',
+    cancel: 'Cancel',
+    delete: 'Delete',
+    noPresets: 'No saved presets',
   },
   cn: {
     about: '关于',
@@ -62,6 +73,10 @@ const T = {
     fontCourier: '打字机',
     fontSerif: '衬线',
     fontSans: '无衬线',
+    fontXiaowei: '小薇',
+    fontMashanzheng: '马善政',
+    fontLongcang: '龙藏',
+    fontZhimangxing: '志芒',
     dropFile: '拖放文件',
     clickToUpload: '点击上传',
     dragAndDrop: '或拖放文件到此处',
@@ -70,25 +85,14 @@ const T = {
     aboutTitle: '关于 Color Diary',
     aboutText: 'Color Diary 是一个封面图片生成器，可以创建精美的分割式封面风格图片。上传您的照片，工具将提取其主色调来创建独特的封面布局，并支持自定义文字、颗粒纹理等。',
     longPressSave: '长按图片保存',
+    preset: '方案',
+    savePreset: '保存',
+    presetNamePlaceholder: '方案名称...',
+    confirm: '确定',
+    cancel: '取消',
+    delete: '删除',
+    noPresets: '暂无保存的方案',
   },
 };
-
-let currentLang = 'cn';
-
-export function t(key) {
-  return T[currentLang]?.[key] ?? T.en?.[key] ?? key;
-}
-
-export function getLang() {
-  return currentLang;
-}
-
-export function setLang(lang) {
-  currentLang = lang;
-}
-
-export function toggleLang() {
-  currentLang = currentLang === 'en' ? 'cn' : 'en';
-}
 
 export default T;

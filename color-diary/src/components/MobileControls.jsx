@@ -1,22 +1,13 @@
 import { useState, useRef, useCallback } from 'react';
 import { useI18n } from '../i18nContext';
+import Toggle from './Toggle';
 import PalettePicker from './PalettePicker';
+import PresetPanel from './PresetPanel';
 import ExportPanel from './ExportPanel';
+import { DATE_FORMATS, FONT_OPTIONS } from '../data/constants';
+import { useCanvasState } from '../canvasStateContext';
 
 const tabs = ['photo', 'title', 'color', 'grain', 'export'];
-
-const DATE_FORMATS = [
-  { value: 'YYYY.MM.DD', label: 'YYYY.MM.DD' },
-  { value: 'MM/DD/YYYY', label: 'MM/DD/YYYY' },
-  { value: 'DD/MM/YYYY', label: 'DD/MM/YYYY' },
-  { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD' },
-];
-
-const FONT_OPTIONS = [
-  { value: 'courier', labelKey: 'fontCourier' },
-  { value: 'serif', labelKey: 'fontSerif' },
-  { value: 'sans', labelKey: 'fontSans' },
-];
 
 const TabIcon = ({ tab }) => {
   const icons = {
@@ -31,16 +22,48 @@ const TabIcon = ({ tab }) => {
 
 const SHEET_H = '40vh';
 
-function MobileControls(props) {
+function MobileControls({ onSheetChange }) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState(null);
   const touchRef = useRef({ x: 0, y: 0 });
 
-  const toggleTab = useCallback((tab) => {
-    setActiveTab((prev) => (prev === tab ? null : tab));
-  }, []);
+  const {
+    title,
+    date,
+    split,
+    fontSize,
+    grainEnabled,
+    grainIntensity,
+    flipped,
+    showDate,
+    fontFamily,
+    dateFormat,
+    onFileSelect,
+    onTitleChange,
+    onDateChange,
+    onSplitChange,
+    onFontSizeChange,
+    onFontChange,
+    onGrainToggle,
+    onGrainIntensityChange,
+    onFlipToggle,
+    onShowDateToggle,
+    onRandomTitle,
+    onDateFormatChange,
+  } = useCanvasState();
 
-  const closeSheet = useCallback(() => setActiveTab(null), []);
+  const toggleTab = useCallback((tab) => {
+    setActiveTab((prev) => {
+      const next = prev === tab ? null : tab;
+      onSheetChange?.(!!next);
+      return next;
+    });
+  }, [onSheetChange]);
+
+  const closeSheet = useCallback(() => {
+    setActiveTab(null);
+    onSheetChange?.(false);
+  }, [onSheetChange]);
 
   const handleSheetTouchStart = useCallback((e) => {
     touchRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -57,23 +80,21 @@ function MobileControls(props) {
       if (dx > 0 && idx > 0) setActiveTab(tabs[idx - 1]);
     } else if (dy > 50) {
       setActiveTab(null);
+      onSheetChange?.(false);
     }
-  }, [activeTab]);
+  }, [activeTab, onSheetChange]);
 
   const TAB_BAR_H = '52px';
 
   return (
     <>
-      {/* Backdrop — covers preview area when sheet is open */}
       <div
         className={`absolute inset-0 z-20 bg-black/30 transition-opacity duration-200 ${activeTab ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         style={{ bottom: TAB_BAR_H }}
         onClick={closeSheet}
       />
 
-      {/* Sheet + Tab bar container */}
       <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-col">
-        {/* Sliding sheet */}
         <div
           className={`overflow-hidden transition-all duration-200 ease-out ${activeTab ? 'max-h-[40vh]' : 'max-h-0'}`}
           onTouchStart={handleSheetTouchStart}
@@ -83,12 +104,10 @@ function MobileControls(props) {
             className="bg-[var(--bg-panel)]/98 backdrop-blur-xl border-t border-[var(--border)] rounded-t-2xl flex flex-col"
             style={{ height: SHEET_H }}
           >
-            {/* Drag handle */}
             <div className="flex justify-center pt-2 pb-1 flex-shrink-0">
               <div className="w-8 h-1 rounded-full bg-[var(--border-strong)]" />
             </div>
 
-            {/* Tab content */}
             <div
               className="flex-1 overflow-y-auto px-4 pb-3"
               style={{ overscrollBehavior: 'contain' }}
@@ -105,29 +124,31 @@ function MobileControls(props) {
                     <input
                       id="mobile-file-input"
                       type="file"
-                      accept="image/*,video/*"
+                      accept="image/*"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) props.onFileSelect?.(file);
+                        if (file) onFileSelect?.(file);
                         e.target.value = '';
                       }}
                     />
                   </label>
                   <div className="flex items-center justify-between">
                     <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('flip')}</span>
-                    <button
-                      onClick={props.onFlipToggle}
-                      className={`w-11 h-6 rounded-full transition-colors cursor-pointer relative ${
-                        props.flipped ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-                      }`}
-                    >
-                      <div
-                        className={`w-5 h-5 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform shadow-sm ${
-                          props.flipped ? 'translate-x-5' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </button>
+                    <Toggle checked={flipped} onChange={onFlipToggle} size="md" />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('split')}</span>
+                      <span className="text-xs text-[var(--text-muted)]">{Math.round(split * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="20"
+                      max="75"
+                      value={Math.round(split * 100)}
+                      onChange={(e) => onSplitChange(Number(e.target.value) / 100)}
+                    />
                   </div>
                 </div>
               )}
@@ -138,7 +159,7 @@ function MobileControls(props) {
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('title')}</span>
                       <button
-                        onClick={props.onRandomTitle}
+                        onClick={onRandomTitle}
                         className="text-xs tracking-wider text-[var(--text-muted)] hover:text-[var(--accent)] transition-colors cursor-pointer"
                       >
                         ↻ {t('randomTitle')}
@@ -146,42 +167,31 @@ function MobileControls(props) {
                     </div>
                     <input
                       type="text"
-                      value={props.title}
+                      value={title}
                       placeholder={t('titlePlaceholder')}
-                      onChange={(e) => props.onTitleChange(e.target.value)}
+                      onChange={(e) => onTitleChange(e.target.value)}
                     />
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('date')}</span>
-                      <button
-                        onClick={props.onShowDateToggle}
-                        className={`w-11 h-6 rounded-full transition-colors cursor-pointer relative ${
-                          props.showDate ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-                        }`}
-                      >
-                        <div
-                          className={`w-5 h-5 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform shadow-sm ${
-                            props.showDate ? 'translate-x-5' : 'translate-x-0.5'
-                          }`}
-                        />
-                      </button>
+                      <Toggle checked={showDate} onChange={onShowDateToggle} size="md" />
                     </div>
-                    {props.showDate && (
+                    {showDate && (
                       <div className="space-y-2">
                         <input
                           type="text"
-                          value={props.date}
+                          value={date}
                           placeholder={t('datePlaceholder')}
-                          onChange={(e) => props.onDateChange(e.target.value)}
+                          onChange={(e) => onDateChange(e.target.value)}
                         />
                         <div className="flex gap-1">
                           {DATE_FORMATS.map((fmt) => (
                             <button
                               key={fmt.value}
-                              onClick={() => props.onDateFormatChange?.(fmt.value)}
+                              onClick={() => onDateFormatChange?.(fmt.value)}
                               className={`flex-1 py-2 text-[10px] tracking-wider rounded border transition-all cursor-pointer whitespace-nowrap ${
-                                props.dateFormat === fmt.value
+                                dateFormat === fmt.value
                                   ? 'border-[var(--accent)] text-[var(--accent)]'
                                   : 'border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--accent)]'
                               }`}
@@ -201,9 +211,9 @@ function MobileControls(props) {
                       {FONT_OPTIONS.map((opt) => (
                         <button
                           key={opt.value}
-                          onClick={() => props.onFontChange(opt.value)}
+                          onClick={() => onFontChange(opt.value)}
                           className={`flex-1 py-2 text-xs tracking-wider rounded border transition-all cursor-pointer ${
-                            props.fontFamily === opt.value
+                            fontFamily === opt.value
                               ? 'border-[var(--accent)] text-[var(--accent)]'
                               : 'border-[var(--border-strong)] text-[var(--text-muted)] hover:text-[var(--accent)]'
                           }`}
@@ -215,66 +225,42 @@ function MobileControls(props) {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('split')}</span>
-                      <span className="text-xs text-[var(--text-muted)]">{Math.round(props.split * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="20"
-                      max="75"
-                      value={Math.round(props.split * 100)}
-                      onChange={(e) => props.onSplitChange(Number(e.target.value) / 100)}
-                    />
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
                       <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('fontSize')}</span>
-                      <span className="text-xs text-[var(--text-muted)]">{props.fontSize}px</span>
+                      <span className="text-xs text-[var(--text-muted)]">{fontSize}px</span>
                     </div>
                     <input
                       type="range"
                       min="12"
                       max="72"
-                      value={props.fontSize}
-                      onChange={(e) => props.onFontSizeChange(Number(e.target.value))}
+                      value={fontSize}
+                      onChange={(e) => onFontSizeChange(Number(e.target.value))}
                     />
                   </div>
                 </div>
               )}
 
               {activeTab === 'color' && (
-                <PalettePicker {...props} />
+                <PalettePicker />
               )}
 
               {activeTab === 'grain' && (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs tracking-wider text-[var(--text-dim)]">{t('grain')}</span>
-                    <button
-                      onClick={props.onGrainToggle}
-                      className={`w-11 h-6 rounded-full transition-colors cursor-pointer relative ${
-                        props.grainEnabled ? 'bg-[var(--accent)]' : 'bg-[var(--toggle-off)]'
-                      }`}
-                    >
-                      <div
-                        className={`w-5 h-5 rounded-full bg-[var(--bg-app)] absolute top-0.5 transition-transform shadow-sm ${
-                          props.grainEnabled ? 'translate-x-5' : 'translate-x-0.5'
-                        }`}
-                      />
-                    </button>
+                    <Toggle checked={grainEnabled} onChange={onGrainToggle} size="md" />
                   </div>
-                  {props.grainEnabled && (
+                  {grainEnabled && (
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs text-[var(--text-muted)]">{t('grainIntensity')}</span>
-                        <span className="text-xs text-[var(--text-muted)]">{props.grainIntensity}</span>
+                        <span className="text-xs text-[var(--text-muted)]">{grainIntensity}</span>
                       </div>
                       <input
                         type="range"
                         min="0"
                         max="100"
-                        value={props.grainIntensity}
-                        onChange={(e) => props.onGrainIntensityChange(Number(e.target.value))}
+                        value={grainIntensity}
+                        onChange={(e) => onGrainIntensityChange(Number(e.target.value))}
                       />
                     </div>
                   )}
@@ -283,7 +269,8 @@ function MobileControls(props) {
 
               {activeTab === 'export' && (
                 <div className="flex flex-col items-center pt-2 space-y-4">
-                  <ExportPanel isMobile={true} {...props} />
+                  <PresetPanel />
+                  <ExportPanel isMobile={true} />
                   <p className="text-[10px] text-[var(--text-subtle)] tracking-wider text-center">
                     {t('longPressSave')}
                   </p>
@@ -293,7 +280,6 @@ function MobileControls(props) {
           </div>
         </div>
 
-        {/* Fixed bottom tab bar */}
         <div
           className="flex bg-[var(--bg-app)] border-t border-[var(--border)]"
           style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
