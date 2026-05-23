@@ -250,10 +250,6 @@ function CanvasView({
 
   const TARGET_ASPECT_RATIO = 5 / 7;
 
-  const previewWidth = availableHeight != null
-    ? `min(100%, ${availableHeight * 5 / 7}px)`
-    : "min(100%, calc((100vh - 80px) * 5 / 7))";
-
   return (
     <div
       className="relative w-full h-full flex items-center justify-center bg-[var(--bg-canvas)] overflow-hidden p-3"
@@ -271,8 +267,10 @@ function CanvasView({
         className="relative bg-black shadow-2xl"
         style={{
           aspectRatio: TARGET_ASPECT_RATIO,
-          width: previewWidth,
-          maxWidth: imageUrl ? '100%' : '100%',
+          maxWidth: '100%',
+          maxHeight: '100%',
+          width: 'auto',
+          height: '100%',
         }}
       >
         {imageUrl ? (

@@ -101,7 +101,7 @@ function MobileControls({ onSheetChange }) {
           onTouchEnd={handleSheetTouchEnd}
         >
           <div
-            className="bg-[var(--bg-panel)]/98 backdrop-blur-xl border-t border-[var(--border)] rounded-t-2xl flex flex-col"
+            className="bg-[var(--bg-app)] border-t border-[var(--border)] rounded-t-2xl flex flex-col"
             style={{ height: SHEET_H }}
           >
             <div className="flex justify-center pt-2 pb-1 flex-shrink-0">

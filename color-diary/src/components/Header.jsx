@@ -4,7 +4,7 @@ import { useTheme } from '../themeContext';
 const themeIcons = { dark: '☀', light: '◐', system: '☾' };
 const themeNext = { dark: 'light', light: 'system', system: 'dark' };
 
-function Header({ onAboutClick }) {
+function Header({ onAboutClick, onUndo, onRedo, canUndo, canRedo }) {
   const { t, toggleLang, lang } = useI18n();
   const { mode, cycle } = useTheme();
 
@@ -20,6 +20,22 @@ function Header({ onAboutClick }) {
         <span className="text-sm tracking-widest text-[var(--accent)] font-courier">COLOR DIARY</span>
       </div>
       <div className="flex items-center gap-3">
+        <button
+          onClick={onUndo}
+          disabled={!canUndo}
+          className="text-xs tracking-wider text-[var(--text-dim)] hover:text-[var(--accent)] transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-default"
+          title="Undo (Ctrl+Z)"
+        >
+          ↩
+        </button>
+        <button
+          onClick={onRedo}
+          disabled={!canRedo}
+          className="text-xs tracking-wider text-[var(--text-dim)] hover:text-[var(--accent)] transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-default"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          ↪
+        </button>
         <button
           onClick={toggleLang}
           className="text-xs tracking-wider text-[var(--text-dim)] hover:text-[var(--accent)] transition-colors cursor-pointer"

@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, useReducer } from 'react';
 import { Vibrant } from 'node-vibrant/browser';
 import { I18nProvider, useI18n } from './i18nContext';
 import { ThemeProvider } from './themeContext';
-import { CanvasStateProvider, useCanvasState } from './canvasStateContext';
+import { CanvasStateProvider } from './canvasStateContext';
 import { getContrastColor, formatDate, drawGrain } from './utils';
 import { getRandomTitle } from './data/titles';
 import Header from './components/Header';
@@ -15,16 +15,103 @@ import ExportPreviewModal from './components/ExportPreviewModal';
 const DEFAULT_W = 1000;
 const DEFAULT_H = 1400;
 const MAX_W = 2000;
+const MAX_HISTORY = 50;
 
 const FONT_MAP = {
   courier: '"Courier Prime", "Courier New", monospace',
   serif: '"Noto Serif SC", "Georgia", serif',
   sans: '"PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif',
-  xiaowei: '"ZCOOL XiaoWei", "Noto Serif SC", serif',
-  mashanzheng: '"Ma Shan Zheng", cursive',
-  longcang: '"Long Cang", cursive',
-  zhimangxing: '"Zhi Mang Xing", cursive',
 };
+
+// State keys that are tracked in undo history
+const TRACKED_KEYS = new Set([
+  'title', 'date', 'split', 'fontSize', 'bgColor', 'bgColor2', 'textColor',
+  'grainEnabled', 'grainIntensity', 'gradientEnabled', 'flipped', 'showDate',
+  'fontFamily', 'imageScale', 'imageOffsetX', 'imageOffsetY', 'dateFormat', 'palette'
+]);
+
+function createInitialState() {
+  return {
+    imageUrl: null,
+    imageElement: null,
+    canvasW: DEFAULT_W,
+    canvasH: DEFAULT_H,
+    palette: null,
+    bgColor: '#000000',
+    bgColor2: '#333333',
+    textColor: 'auto',
+    title: '',
+    date: formatDate(),
+    split: 0.45,
+    fontSize: 32,
+    grainEnabled: false,
+    grainIntensity: 20,
+    gradientEnabled: false,
+    aboutVisible: false,
+    isMobile: false,
+    imageOffsetX: 0,
+    imageOffsetY: 0,
+    flipped: false,
+    showDate: true,
+    fontFamily: 'serif',
+    imageScale: 1,
+    dateFormat: 'YYYY.MM.DD',
+    showExportPreview: false,
+    // Undo history - managed by reducer
+    _past: [],
+    _future: [],
+  };
+}
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'UNDO': {
+      if (state._past.length === 0) return state;
+      const previous = state._past[state._past.length - 1];
+      const newPast = state._past.slice(0, -1);
+      const currentSnapshot = {};
+      for (const key of TRACKED_KEYS) {
+        currentSnapshot[key] = state[key];
+      }
+      return {
+        ...previous,
+        _past: newPast,
+        _future: [currentSnapshot, ...state._future],
+      };
+    }
+    case 'REDO': {
+      if (state._future.length === 0) return state;
+      const next = state._future[0];
+      const newFuture = state._future.slice(1);
+      const currentSnapshot = {};
+      for (const key of TRACKED_KEYS) {
+        currentSnapshot[key] = state[key];
+      }
+      return {
+        ...state,
+        ...next,
+        _past: [...state._past, currentSnapshot].slice(-MAX_HISTORY),
+        _future: newFuture,
+      };
+    }
+    case 'SET': {
+      const { key, value } = action;
+      if (state[key] === value) return state;
+      const newState = { ...state, [key]: value };
+      if (TRACKED_KEYS.has(key)) {
+        const snapshot = {};
+        for (const k of TRACKED_KEYS) {
+          snapshot[k] = state[k];
+        }
+        newState._past = [...state._past, snapshot].slice(-MAX_HISTORY);
+        newState._future = [];
+      }
+      return newState;
+    }
+    default:
+      return state;
+  }
+}
 
 function computeCanvasWH(imgW, imgH) {
   let w = Math.max(Math.min(imgW, MAX_W), DEFAULT_W);
@@ -37,73 +124,96 @@ function computeCanvasWH(imgW, imgH) {
 }
 
 function AppInner() {
-  const [imageUrl, setImageUrl] = useState(null);
-  const [imageElement, setImageElement] = useState(null);
-  const [canvasW, setCanvasW] = useState(DEFAULT_W);
-  const [canvasH, setCanvasH] = useState(DEFAULT_H);
-  const [palette, setPalette] = useState(null);
-  const [bgColor, setBgColor] = useState('#000000');
-  const [bgColor2, setBgColor2] = useState('#333333');
-  const [textColor, setTextColor] = useState('auto');
-  const [title, setTitle] = useState('');
-  const [date, setDate] = useState(formatDate());
-  const [split, setSplit] = useState(0.45);
-  const [fontSize, setFontSize] = useState(32);
-  const [grainEnabled, setGrainEnabled] = useState(false);
-  const [grainIntensity, setGrainIntensity] = useState(20);
-  const [gradientEnabled, setGradientEnabled] = useState(false);
-  const [aboutVisible, setAboutVisible] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [imageOffsetX, setImageOffsetX] = useState(0);
-  const [imageOffsetY, setImageOffsetY] = useState(0);
-  const [flipped, setFlipped] = useState(false);
-  const [showDate, setShowDate] = useState(true);
-  const [fontFamily, setFontFamily] = useState('serif');
-  const [imageScale, setImageScale] = useState(1);
-  const [dateFormat, setDateFormat] = useState('YYYY.MM.DD');
-  const [showExportPreview, setShowExportPreview] = useState(false);
+  const [state, dispatch] = useReducer(reducer, null, createInitialState);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-  const mobilePreviewRef = useRef(null);
-  const [mobilePreviewH, setMobilePreviewH] = useState(null);
+
+  const {
+    imageUrl,
+    imageElement,
+    canvasW,
+    canvasH,
+    palette,
+    bgColor,
+    bgColor2,
+    textColor,
+    title,
+    date,
+    split,
+    fontSize,
+    grainEnabled,
+    grainIntensity,
+    gradientEnabled,
+    aboutVisible,
+    isMobile,
+    imageOffsetX,
+    imageOffsetY,
+    flipped,
+    showDate,
+    fontFamily,
+    imageScale,
+    dateFormat,
+    showExportPreview,
+    _past,
+    _future,
+  } = state;
+
+  const set = useCallback((key, value) => {
+    dispatch({ type: 'SET', key, value });
+  }, []);
 
   const canvasRef = useRef(null);
+  const previewRef = useRef(null);
   const { t } = useI18n();
 
+  // Keyboard shortcuts for undo/redo
   useEffect(() => {
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          dispatch({ type: 'REDO' });
+        } else {
+          dispatch({ type: 'UNDO' });
+        }
+        e.preventDefault();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        dispatch({ type: 'REDO' });
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const checkMobile = () => dispatch({ type: 'SET', key: 'isMobile', value: window.innerWidth < 768 });
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  useEffect(() => {
-    if (!isMobile) return;
-    const el = mobilePreviewRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      setMobilePreviewH(entry.contentRect.height);
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [isMobile, mobileSheetOpen]);
-
   const scaleFactor = canvasW / DEFAULT_W;
   const effectiveFontSize = Math.round(fontSize * scaleFactor);
 
-  const offsetBounds = useMemo(() => {
+  // Compute valid offset bounds so the image always covers its designated area
+  const offsetBounds = (() => {
     if (!imageElement) return null;
     const imgW = imageElement.naturalWidth || imageElement.width;
     const imgH = imageElement.naturalHeight || imageElement.height;
-    const photoH = canvasH - split * canvasH;
+    if (!imgW || !imgH) return null;
+
+    const bgHeight = split * canvasH;
+    const photoH = canvasH - bgHeight;
     const photoW = canvasW;
     const coverScale = Math.max(photoW / imgW, photoH / imgH);
     const finalScale = coverScale * (imageScale || 1);
     const dw = imgW * finalScale;
     const dh = imgH * finalScale;
-    const maxOffX = ((dw - photoW) / 2) / scaleFactor;
-    const maxOffY = ((dh - photoH) / 2) / scaleFactor;
-    return { minX: -maxOffX, maxX: maxOffX, minY: -maxOffY, maxY: maxOffY };
-  }, [imageElement, canvasW, canvasH, split, imageScale, scaleFactor]);
+
+    const maxOffsetX = Math.max(0, (dw - photoW) / 2) / scaleFactor;
+    const maxOffsetY = Math.max(0, (dh - photoH) / 2) / scaleFactor;
+
+    return { minX: -maxOffsetX, maxX: maxOffsetX, minY: -maxOffsetY, maxY: maxOffsetY };
+  })();
 
   const drawPhotoInRect = useCallback(
     (ctx, ox, oy, w, h) => {
@@ -246,42 +356,73 @@ function AppInner() {
 
       const colors = paletteList.map((s) => s.hex);
       if (colors.length > 0) {
-        setPalette(colors);
-        setBgColor(colors[0]);
+        dispatch({ type: 'SET', key: 'palette', value: colors });
+        dispatch({ type: 'SET', key: 'bgColor', value: colors[0] });
         if (colors.length >= 2) {
-          setBgColor2(colors[1]);
+          dispatch({ type: 'SET', key: 'bgColor2', value: colors[1] });
         }
       }
     } catch (err) {
       console.error('Color extraction failed:', err);
       const fallback = ['#4A90D9', '#357ABD', '#2C3E50', '#34495E', '#7FB3E0', '#A8D0F0'];
-      setPalette(fallback);
-      setBgColor(fallback[0]);
-      setBgColor2(fallback[1]);
+      dispatch({ type: 'SET', key: 'palette', value: fallback });
+      dispatch({ type: 'SET', key: 'bgColor', value: fallback[0] });
+      dispatch({ type: 'SET', key: 'bgColor2', value: fallback[1] });
     }
   }, []);
 
   const handleFileSelect = useCallback(
     async (file) => {
       if (!file) return;
-      setImageOffsetX(0);
-      setImageOffsetY(0);
-      setImageScale(1);
+      dispatch({ type: 'SET', key: 'imageOffsetX', value: 0 });
+      dispatch({ type: 'SET', key: 'imageOffsetY', value: 0 });
+      dispatch({ type: 'SET', key: 'imageScale', value: 1 });
 
       const url = URL.createObjectURL(file);
-      setImageUrl(url);
+      dispatch({ type: 'SET', key: 'imageUrl', value: url });
 
-      const img = new Image();
-      img.onload = () => {
+      const processImage = (img) => {
         const nw = img.naturalWidth || img.width;
         const nh = img.naturalHeight || img.height;
         const { w, h } = computeCanvasWH(nw, nh);
-        setCanvasW(w);
-        setCanvasH(h);
-        setImageElement(img);
+        dispatch({ type: 'SET', key: 'canvasW', value: w });
+        dispatch({ type: 'SET', key: 'canvasH', value: h });
+        dispatch({ type: 'SET', key: 'imageElement', value: img });
         extractColors(img);
       };
-      img.src = url;
+
+      if (file.type.startsWith('video/')) {
+        const video = document.createElement('video');
+        video.src = url;
+        video.muted = true;
+        video.playsInline = true;
+
+        await new Promise((resolve) => {
+          video.addEventListener('loadeddata', resolve, { once: true });
+          video.load();
+        });
+
+        video.currentTime = 0;
+        await new Promise((resolve) => {
+          video.addEventListener('seeked', resolve, { once: true });
+        });
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = video.videoWidth || 640;
+        tempCanvas.height = video.videoHeight || 480;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        const img = new Image();
+        img.onload = () => processImage(img);
+        img.src = tempCanvas.toDataURL('image/jpeg', 0.9);
+        URL.revokeObjectURL(url);
+        dispatch({ type: 'SET', key: 'imageUrl', value: img.src });
+      } else {
+        const img = new Image();
+        img.onload = () => processImage(img);
+        img.src = url;
+      }
     },
     [extractColors]
   );
@@ -289,31 +430,31 @@ function AppInner() {
   const handleRandom = useCallback(() => {
     if (palette && palette.length > 0) {
       const idx = Math.floor(Math.random() * palette.length);
-      setBgColor(palette[idx]);
+      dispatch({ type: 'SET', key: 'bgColor', value: palette[idx] });
     }
   }, [palette]);
 
   const handleRandomTitle = useCallback(() => {
-    setTitle(getRandomTitle());
+    dispatch({ type: 'SET', key: 'title', value: getRandomTitle() });
   }, []);
 
   const handleImageOffsetChange = useCallback((x, y) => {
-    setImageOffsetX(x);
-    setImageOffsetY(y);
+    dispatch({ type: 'SET', key: 'imageOffsetX', value: x });
+    dispatch({ type: 'SET', key: 'imageOffsetY', value: y });
   }, []);
 
   const handleImageScaleChange = useCallback((s) => {
-    setImageScale(s);
+    dispatch({ type: 'SET', key: 'imageScale', value: s });
   }, []);
 
   const handleResetImagePosition = useCallback(() => {
-    setImageScale(1);
-    setImageOffsetX(0);
-    setImageOffsetY(0);
+    dispatch({ type: 'SET', key: 'imageScale', value: 1 });
+    dispatch({ type: 'SET', key: 'imageOffsetX', value: 0 });
+    dispatch({ type: 'SET', key: 'imageOffsetY', value: 0 });
   }, []);
 
   const handleDateFormatChange = useCallback((fmt) => {
-    setDateFormat(fmt);
+    dispatch({ type: 'SET', key: 'dateFormat', value: fmt });
     const d = new Date();
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -324,11 +465,11 @@ function AppInner() {
       'DD/MM/YYYY': `${dd}/${mm}/${yyyy}`,
       'YYYY-MM-DD': `${yyyy}-${mm}-${dd}`,
     };
-    setDate(map[fmt] || `${yyyy}.${mm}.${dd}`);
+    dispatch({ type: 'SET', key: 'date', value: map[fmt] || `${yyyy}.${mm}.${dd}` });
   }, []);
 
   const showExportPreviewFn = useCallback(() => {
-    setShowExportPreview(true);
+    dispatch({ type: 'SET', key: 'showExportPreview', value: true });
   }, []);
 
   const doDownload = useCallback(() => {
@@ -354,38 +495,10 @@ function AppInner() {
 
   const handleConfirmExport = useCallback(() => {
     doDownload();
-    setShowExportPreview(false);
+    dispatch({ type: 'SET', key: 'showExportPreview', value: false });
   }, [doDownload]);
 
-  const handleApplyPreset = useCallback((config) => {
-    if (config.split !== undefined) setSplit(config.split);
-    if (config.fontSize !== undefined) setFontSize(config.fontSize);
-    if (config.grainEnabled !== undefined) setGrainEnabled(config.grainEnabled);
-    if (config.grainIntensity !== undefined) setGrainIntensity(config.grainIntensity);
-    if (config.flipped !== undefined) setFlipped(config.flipped);
-    if (config.showDate !== undefined) setShowDate(config.showDate);
-    if (config.fontFamily !== undefined) setFontFamily(config.fontFamily);
-    if (config.dateFormat !== undefined) {
-      setDateFormat(config.dateFormat);
-      const d = new Date();
-      const yyyy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const map = {
-        'YYYY.MM.DD': `${yyyy}.${mm}.${dd}`,
-        'MM/DD/YYYY': `${mm}/${dd}/${yyyy}`,
-        'DD/MM/YYYY': `${dd}/${mm}/${yyyy}`,
-        'YYYY-MM-DD': `${yyyy}-${mm}-${dd}`,
-      };
-      setDate(map[config.dateFormat] || `${yyyy}.${mm}.${dd}`);
-    }
-    if (config.gradientEnabled !== undefined) setGradientEnabled(config.gradientEnabled);
-    if (config.textColor !== undefined) setTextColor(config.textColor);
-    if (config.bgColor !== undefined) setBgColor(config.bgColor);
-    if (config.bgColor2 !== undefined) setBgColor2(config.bgColor2);
-  }, []);
-
-  const canvasState = {
+  const commonProps = {
     imageUrl,
     palette,
     bgColor,
@@ -404,104 +517,113 @@ function AppInner() {
     imageScale,
     dateFormat,
     hasImage: !!imageUrl,
+    canUndo: _past.length > 0,
+    canRedo: _future.length > 0,
     onFileSelect: handleFileSelect,
-    onTitleChange: setTitle,
-    onDateChange: setDate,
-    onSplitChange: setSplit,
-    onFontSizeChange: setFontSize,
-    onFontChange: setFontFamily,
-    onBgColor: setBgColor,
-    onBgColor2: setBgColor2,
-    onTextColor: setTextColor,
-    onGrainToggle: () => setGrainEnabled((v) => !v),
-    onGrainIntensityChange: setGrainIntensity,
-    onGradientToggle: () => setGradientEnabled((v) => !v),
-    onFlipToggle: () => setFlipped((v) => !v),
-    onShowDateToggle: () => setShowDate((v) => !v),
+    onTitleChange: (v) => dispatch({ type: 'SET', key: 'title', value: v }),
+    onDateChange: (v) => dispatch({ type: 'SET', key: 'date', value: v }),
+    onSplitChange: (v) => dispatch({ type: 'SET', key: 'split', value: v }),
+    onFontSizeChange: (v) => dispatch({ type: 'SET', key: 'fontSize', value: v }),
+    onFontChange: (v) => dispatch({ type: 'SET', key: 'fontFamily', value: v }),
+    onBgColor: (v) => dispatch({ type: 'SET', key: 'bgColor', value: v }),
+    onBgColor2: (v) => dispatch({ type: 'SET', key: 'bgColor2', value: v }),
+    onTextColor: (v) => dispatch({ type: 'SET', key: 'textColor', value: v }),
+    onGrainToggle: () => dispatch({ type: 'SET', key: 'grainEnabled', value: !grainEnabled }),
+    onGrainIntensityChange: (v) => dispatch({ type: 'SET', key: 'grainIntensity', value: v }),
+    onGradientToggle: () => dispatch({ type: 'SET', key: 'gradientEnabled', value: !gradientEnabled }),
+    onFlipToggle: () => dispatch({ type: 'SET', key: 'flipped', value: !flipped }),
+    onShowDateToggle: () => dispatch({ type: 'SET', key: 'showDate', value: !showDate }),
     onRandom: handleRandom,
     onRandomTitle: handleRandomTitle,
     onExportPng: showExportPreviewFn,
     onImageScaleChange: handleImageScaleChange,
     onResetImagePosition: handleResetImagePosition,
     onDateFormatChange: handleDateFormatChange,
-    onApplyPreset: handleApplyPreset,
+    onUndo: () => dispatch({ type: 'UNDO' }),
+    onRedo: () => dispatch({ type: 'REDO' }),
   };
 
   return (
-    <CanvasStateProvider value={canvasState}>
-      <div className="h-screen w-screen flex flex-col overflow-hidden bg-[var(--bg-app)]">
-        <Header onAboutClick={() => setAboutVisible(true)} />
+    <div className="h-screen w-screen flex flex-col overflow-hidden bg-[var(--bg-app)]">
+      <Header
+        onAboutClick={() => dispatch({ type: 'SET', key: 'aboutVisible', value: true })}
+        onUndo={() => dispatch({ type: 'UNDO' })}
+        onRedo={() => dispatch({ type: 'REDO' })}
+        canUndo={_past.length > 0}
+        canRedo={_future.length > 0}
+      />
 
-        <div className="flex-1 flex pt-[52px] overflow-hidden">
-          {!isMobile ? (
-            <>
-              <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#0a0a0a]">
-                <div className="w-full max-h-full flex items-center justify-center p-2">
-                  <CanvasView
-                    imageUrl={imageUrl}
-                    canvasW={canvasW}
-                    canvasH={canvasH}
-                    onFileSelect={handleFileSelect}
-                    canvasRef={canvasRef}
-                    imageOffsetX={imageOffsetX}
-                    imageOffsetY={imageOffsetY}
-                    imageScale={imageScale}
-                    onImageOffsetChange={handleImageOffsetChange}
-                    onImageScaleChange={handleImageScaleChange}
-                    onResetImagePosition={handleResetImagePosition}
-                    offsetBounds={offsetBounds}
-                    split={split}
-                    flipped={flipped}
-                  />
-                </div>
-              </div>
-              <ControlPanel />
-            </>
-          ) : (
-            <div className="flex-1 relative overflow-hidden">
-              <div
-                ref={mobilePreviewRef}
-                className="absolute left-0 right-0 flex items-center justify-center bg-[#0a0a0a] p-2 transition-[top,bottom] duration-200 ease-out"
-                style={{
-                  top: 0,
-                  bottom: mobileSheetOpen ? 'calc(40vh + 52px)' : 0,
-                }}
-              >
+      <div className="flex-1 flex pt-[52px] overflow-hidden">
+        {!isMobile ? (
+          <>
+            <div className="flex-1 flex items-center justify-center overflow-hidden bg-[#0a0a0a]">
+              <div className="w-full max-h-full flex items-center justify-center p-2">
                 <CanvasView
                   imageUrl={imageUrl}
                   canvasW={canvasW}
                   canvasH={canvasH}
                   onFileSelect={handleFileSelect}
                   canvasRef={canvasRef}
+                  previewRef={previewRef}
                   imageOffsetX={imageOffsetX}
                   imageOffsetY={imageOffsetY}
                   imageScale={imageScale}
                   onImageOffsetChange={handleImageOffsetChange}
                   onImageScaleChange={handleImageScaleChange}
                   onResetImagePosition={handleResetImagePosition}
-                  availableHeight={mobilePreviewH}
                   offsetBounds={offsetBounds}
-                  split={split}
-                  flipped={flipped}
                 />
               </div>
-              <MobileControls onSheetChange={setMobileSheetOpen} />
             </div>
-          )}
-        </div>
-
-        {aboutVisible && <AboutModal onClose={() => setAboutVisible(false)} />}
-        {showExportPreview && (
-          <ExportPreviewModal
-            onClose={() => setShowExportPreview(false)}
-            onDownload={handleConfirmExport}
-            canvasW={canvasW}
-            canvasH={canvasH}
-            renderFrame={renderFrame}
-          />
+            <CanvasStateProvider value={commonProps}>
+              <ControlPanel />
+            </CanvasStateProvider>
+          </>
+        ) : (
+          <div className="flex-1 relative overflow-hidden">
+            <div
+              className="absolute left-0 right-0 flex items-center justify-center bg-[#0a0a0a] transition-all duration-200 ease-out"
+              style={{
+                top: 0,
+                bottom: mobileSheetOpen ? 'calc(40vh + 52px + env(safe-area-inset-bottom, 0px))' : 0,
+                padding: 8,
+              }}
+              id="mobile-canvas-container"
+            >
+              <CanvasView
+                imageUrl={imageUrl}
+                canvasW={canvasW}
+                canvasH={canvasH}
+                onFileSelect={handleFileSelect}
+                canvasRef={canvasRef}
+                previewRef={previewRef}
+                imageOffsetX={imageOffsetX}
+                imageOffsetY={imageOffsetY}
+                imageScale={imageScale}
+                onImageOffsetChange={handleImageOffsetChange}
+                onImageScaleChange={handleImageScaleChange}
+                onResetImagePosition={handleResetImagePosition}
+                offsetBounds={offsetBounds}
+              />
+            </div>
+            <CanvasStateProvider value={commonProps}>
+              <MobileControls onSheetChange={setMobileSheetOpen} />
+            </CanvasStateProvider>
+          </div>
         )}
       </div>
-    </CanvasStateProvider>
+
+      {aboutVisible && <AboutModal onClose={() => dispatch({ type: 'SET', key: 'aboutVisible', value: false })} />}
+      {showExportPreview && (
+        <ExportPreviewModal
+          onClose={() => dispatch({ type: 'SET', key: 'showExportPreview', value: false })}
+          onDownload={handleConfirmExport}
+          canvasW={canvasW}
+          canvasH={canvasH}
+          renderFrame={renderFrame}
+        />
+      )}
+    </div>
   );
 }
 
